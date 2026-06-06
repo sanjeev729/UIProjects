@@ -1,0 +1,47 @@
+---
+const links = [
+  { href: "/", label: "Ruler" },
+  { href: "/#calibrate", label: "Calibrate" },
+  { href: "/#how-it-works", label: "How it works" },
+  { href: "/#faq", label: "FAQ" },
+];
+---
+
+<header
+  class="sticky top-0 z-40 backdrop-blur"
+  style="background: color-mix(in srgb, var(--color-canvas) 85%, transparent); border-bottom: 1px solid var(--color-hairline);"
+>
+  <div class="container-page flex items-center" style="height: 64px;">
+    <a href="/" class="flex items-center gap-2 group" aria-label="Better Online Ruler home">
+      <span
+        class="inline-flex items-center justify-center"
+        style="width:28px;height:28px;border-radius:6px;background:var(--color-ink);color:var(--color-on-primary);"
+      >
+        <!-- inline ruler glyph -->
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+          <rect x="1" y="4" width="14" height="8" rx="1" stroke="currentColor" stroke-width="1.2"/>
+          <path d="M3 8v3M5 8v2M7 8v3M9 8v2M11 8v3M13 8v2" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+        </svg>
+      </span>
+      <span class="body-sm" style="font-weight:600;letter-spacing:-0.2px;">Better Online Ruler</span>
+    </a>
+
+    <nav class="hidden md:flex items-center ml-8" aria-label="Primary">
+      {
+        links.map((l) => (
+          <a class="nav-link" href={l.href}>{l.label}</a>
+        ))
+      }
+    </nav>
+
+    <div class="ml-auto flex items-center gap-2">
+      <a class="btn-secondary btn-sm hidden sm:inline-flex" href="https://github.com" aria-label="View source on GitHub">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+          <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38v-1.34c-2.22.48-2.69-1.07-2.69-1.07-.36-.92-.89-1.16-.89-1.16-.73-.5.06-.49.06-.49.8.06 1.23.83 1.23.83.72 1.23 1.88.88 2.34.67.07-.52.28-.88.51-1.08-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.13 0 0 .67-.22 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.52-1.03 2.19-.82 2.19-.82.44 1.11.16 1.93.08 2.13.51.56.82 1.28.82 2.15 0 3.07-1.87 3.75-3.65 3.94.29.25.54.73.54 1.48v2.19c0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/>
+        </svg>
+        Star
+      </a>
+      <a class="btn-primary btn-sm" href="#calibrate">Open Ruler</a>
+    </div>
+  </div>
+</header>

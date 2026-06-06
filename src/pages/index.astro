@@ -1,11 +1,262 @@
 ---
-import Welcome from '../components/Welcome.astro';
-import Layout from '../layouts/Layout.astro';
-
-// Welcome to Astro! Wondering what to do next? Check out the Astro documentation at https://docs.astro.build
-// Don't want to use any of this? Delete everything in this file, the `assets`, `components`, and `layouts` directories, and start fresh.
+import Layout from "../layouts/Layout.astro";
+import Ruler from "../components/Ruler.astro";
 ---
 
 <Layout>
-	<Welcome />
+  <!-- ─── HERO ────────────────────────────────────────────── -->
+  <section class="relative" style="background:var(--color-canvas);">
+    <div class="mesh-gradient" aria-hidden="true"></div>
+
+    <div class="container-page relative" style="padding-block: 96px;">
+      <div class="flex items-center justify-center mb-6">
+        <span class="chip-mono">v0.1 · public preview</span>
+      </div>
+
+      <h1 class="display-xl text-center mx-auto" style="max-width: 22ch;">
+        Measure what you see, on the screen you see it on.
+      </h1>
+
+      <p class="body-lg text-center mx-auto mt-5" style="max-width: 56ch; color: var(--color-body);">
+        A pixel-accurate online ruler with three calibration methods, four edge placements, and zero friction. No accounts, no ads, no tracking — just a ruler that works.
+      </p>
+
+      <div class="flex items-center justify-center gap-3 mt-8 flex-wrap">
+        <a href="#calibrate" class="btn-primary" id="open-ruler-btn">Open the Ruler</a>
+        <a href="#how-it-works" class="btn-secondary">See how it works</a>
+      </div>
+
+      <!-- live PPI + edge readout -->
+      <div class="flex items-center justify-center gap-3 mt-6 flex-wrap body-sm" style="color:var(--color-mute);">
+        <span class="chip-mono">Edge: <span id="hero-edge">top</span></span>
+        <span class="chip-mono">PPI: <span id="hero-ppi">96</span></span>
+        <span class="chip-mono">Unit: <span id="hero-unit">cm</span></span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─── INLINE INTERACTIVE DEMO ─────────────────────────── -->
+  <section id="calibrate" class="band-soft" style="border-top: 1px solid var(--color-hairline); border-bottom: 1px solid var(--color-hairline);">
+    <div class="container-page" style="padding-block: 96px;">
+      <div class="grid md:grid-cols-2 gap-12 items-start">
+        <div>
+          <div class="caption-mono" style="color:var(--color-mute);">Three ways to calibrate</div>
+          <h2 class="display-lg mt-2" style="max-width: 18ch;">A method for every screen, in seconds.</h2>
+          <p class="body-md mt-4" style="color:var(--color-body); max-width: 50ch;">
+            We pair a device auto-detect, a manual diagonal entry, and a credit-card overlay — pick whichever is closest to your hand. The ruler re-draws instantly.
+          </p>
+
+          <div class="mt-6 flex flex-col gap-3" style="max-width: 30rem;">
+            <button class="card text-left" data-method="1" id="cta-m1" style="cursor:pointer;">
+              <div class="flex items-start gap-3">
+                <span class="chip-mono" style="margin-top:2px;">01</span>
+                <div>
+                  <div class="display-sm">Auto-Detect Device</div>
+                  <p class="body-sm mt-1" style="color:var(--color-body);">We recognize 12+ popular models with high confidence and fall back to a sensible default.</p>
+                </div>
+              </div>
+            </button>
+            <button class="card text-left" data-method="2" id="cta-m2" style="cursor:pointer;">
+              <div class="flex items-start gap-3">
+                <span class="chip-mono" style="margin-top:2px;">02</span>
+                <div>
+                  <div class="display-sm">Screen Diagonal</div>
+                  <p class="body-sm mt-1" style="color:var(--color-body);">Type your screen's diagonal in inches. We compute the PPI from the device-pixel resolution.</p>
+                </div>
+              </div>
+            </button>
+            <button class="card text-left" data-method="3" id="cta-m3" style="cursor:pointer;">
+              <div class="flex items-start gap-3">
+                <span class="chip-mono" style="margin-top:2px;">03</span>
+                <div>
+                  <div class="display-sm">Credit Card Calibration</div>
+                  <p class="body-sm mt-1" style="color:var(--color-body);">Drag-resize a card to a physical card. ISO/IEC 7810 ID-1 — the most accurate method.</p>
+                </div>
+              </div>
+            </button>
+          </div>
+        </div>
+
+        <div class="card" style="padding: 0; overflow: hidden;">
+          <!-- the ruler overlay sits on top of this page already; here we describe it -->
+          <div class="band-dark" style="padding: 24px;">
+            <div class="caption-mono" style="color: var(--color-cyan-soft); opacity: 0.85;">Live</div>
+            <div class="display-sm mt-1">Your ruler is already running.</div>
+            <p class="body-sm mt-2" style="color: rgba(255,255,255,0.7); max-width: 38ch;">
+              Look at the top of the page. Press <span class="caption-mono" style="background:rgba(255,255,255,0.12); padding: 2px 6px; border-radius: 4px;">1&nbsp;2&nbsp;3&nbsp;4</span> to move it to another edge, or <span class="caption-mono" style="background:rgba(255,255,255,0.12); padding: 2px 6px; border-radius: 4px;">C</span> to calibrate.
+            </p>
+          </div>
+          <div style="padding: 24px;">
+            <div class="caption-mono" style="color:var(--color-mute);">Keyboard</div>
+            <ul class="mt-3 grid grid-cols-2 gap-x-6 gap-y-2 body-sm">
+              <li class="flex justify-between"><span>Top / Bottom / L / R</span><span class="caption-mono" style="color:var(--color-body);">1 2 3 4</span></li>
+              <li class="flex justify-between"><span>Cycle units</span><span class="caption-mono" style="color:var(--color-body);">U</span></li>
+              <li class="flex justify-between"><span>Calibrate</span><span class="caption-mono" style="color:var(--color-body);">C</span></li>
+              <li class="flex justify-between"><span>Fullscreen</span><span class="caption-mono" style="color:var(--color-body);">F</span></li>
+              <li class="flex justify-between"><span>Help</span><span class="caption-mono" style="color:var(--color-body);">?</span></li>
+              <li class="flex justify-between"><span>Close</span><span class="caption-mono" style="color:var(--color-body);">Esc</span></li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─── FEATURE 3-UP ────────────────────────────────────── -->
+  <section id="how-it-works" style="background:var(--color-canvas);">
+    <div class="container-page" style="padding-block: 96px;">
+      <div class="max-w-2xl">
+        <div class="caption-mono" style="color:var(--color-mute);">How it works</div>
+        <h2 class="display-lg mt-2">Calibrate once. Measure everything.</h2>
+        <p class="body-md mt-3" style="color:var(--color-body);">
+          We solve the only hard problem: turning CSS pixels into real-world millimetres. Once we know your pixels-per-inch, every ruler, every unit, every edge is just drawing tick marks at the right spacing.
+        </p>
+      </div>
+
+      <div class="grid md:grid-cols-3 gap-4 mt-10">
+        <article id="method-auto" class="card" style="padding: 24px;">
+          <div class="chip-mono">Auto</div>
+          <h3 class="display-sm mt-3">Auto-Detect Device.</h3>
+          <p class="body-sm mt-2" style="color:var(--color-body);">
+            We read the user agent and screen geometry to suggest a calibrated PPI. High confidence for Apple, Pixel, Galaxy, and Surface; heuristic fallback everywhere else.
+          </p>
+          <ul class="body-sm mt-4 flex flex-col gap-1.5" style="color:var(--color-body);">
+            <li>· ~12 named device presets</li>
+            <li>· DPR-aware heuristic fallback</li>
+            <li>· Re-detect in one click</li>
+          </ul>
+        </article>
+
+        <article id="method-diagonal" class="card" style="padding: 24px;">
+          <div class="chip-mono">Diagonal</div>
+          <h3 class="display-sm mt-3">Screen Diagonal.</h3>
+          <p class="body-sm mt-2" style="color:var(--color-body);">
+            Enter the diagonal in inches (printed on the spec sheet). We combine it with the device-pixel resolution to compute a precise PPI.
+          </p>
+          <ul class="body-sm mt-4 flex flex-col gap-1.5" style="color:var(--color-body);">
+            <li>· Works on any monitor</li>
+            <li>· Independent of browser zoom</li>
+            <li>· Live PPI preview as you type</li>
+          </ul>
+        </article>
+
+        <article id="method-card" class="card" style="padding: 24px; background: var(--color-canvas-soft);">
+          <div class="chip-mono">Card</div>
+          <h3 class="display-sm mt-3">Credit Card Calibration.</h3>
+          <p class="body-sm mt-2" style="color:var(--color-body);">
+            Place any standard ID-1 card on your screen and drag the on-screen rectangle to match. This is the highest-accuracy method — no assumptions about the panel.
+          </p>
+          <ul class="body-sm mt-4 flex flex-col gap-1.5" style="color:var(--color-body);">
+            <li>· 85.60 × 53.98 mm reference</li>
+            <li>· Drag to position, handle to resize</li>
+            <li>· Aspect-locked to ISO 7810</li>
+          </ul>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─── DARK SHOWCASE BAND ──────────────────────────────── -->
+  <section class="band-dark" id="tips">
+    <div class="container-page" style="padding-block: 96px;">
+      <div class="grid md:grid-cols-2 gap-10 items-center">
+        <div>
+          <div class="caption-mono" style="color: var(--color-cyan-soft); opacity: 0.85;">Accuracy tips</div>
+          <h2 class="display-lg mt-2">A few seconds of care = millimetre-precise.</h2>
+          <p class="body-md mt-3" style="color: rgba(255,255,255,0.7); max-width: 50ch;">
+            The math is only as good as the calibration. Three things make the biggest difference:
+          </p>
+          <ol class="body-md mt-5 flex flex-col gap-3" style="color: rgba(255,255,255,0.85); list-style: none; padding: 0;">
+            <li><span class="caption-mono" style="color: var(--color-cyan);">01.</span> Set browser zoom to 100% before calibrating.</li>
+            <li><span class="caption-mono" style="color: var(--color-cyan);">02.</span> Re-calibrate when you dock/undock or change displays.</li>
+            <li><span class="caption-mono" style="color: var(--color-cyan);">03.</span> Use the credit-card method when in doubt — it's the most accurate.</li>
+          </ol>
+        </div>
+
+        <div class="card" style="background:#0e0e0e; border-color:#262626; color:#fafafa;">
+          <div class="caption-mono" style="color: var(--color-cyan-soft); opacity: 0.85;">What's different here</div>
+          <ul class="body-md mt-4 flex flex-col gap-3" style="color: rgba(255,255,255,0.85); list-style:none; padding:0;">
+            <li>· Four edge placements — not just horizontal.</li>
+            <li>· Vertical ruler with rotated labels.</li>
+            <li>· Drag-to-reposition anywhere on the page.</li>
+            <li>· mm / cm / inch / px in one cycle.</li>
+            <li>· Persistence — your calibration is remembered.</li>
+            <li>· Live PPI readout in the toolbar.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─── FAQ ────────────────────────────────────────────── -->
+  <section id="faq" style="background:var(--color-canvas);">
+    <div class="container-page" style="padding-block: 96px;">
+      <div class="max-w-2xl">
+        <div class="caption-mono" style="color:var(--color-mute);">FAQ</div>
+        <h2 class="display-lg mt-2">Frequently asked, briefly answered.</h2>
+      </div>
+      <div class="grid md:grid-cols-2 gap-x-12 gap-y-8 mt-10 max-w-4xl">
+        <div>
+          <h3 class="display-sm">Why does browser zoom matter?</h3>
+          <p class="body-sm mt-2" style="color:var(--color-body);">
+            CSS pixels scale with browser zoom, but the physical screen doesn't. If you calibrate at 110% zoom the ruler will be 10% too large. Always calibrate at 100%.
+          </p>
+        </div>
+        <div>
+          <h3 class="display-sm">Is my calibration stored?</h3>
+          <p class="body-sm mt-2" style="color:var(--color-body);">
+            Yes — locally, in your browser's <code class="code" style="background:var(--color-canvas-soft-2);padding:1px 4px;border-radius:4px;">localStorage</code>. Nothing is sent to a server.
+          </p>
+        </div>
+        <div>
+          <h3 class="display-sm">Which method is most accurate?</h3>
+          <p class="body-sm mt-2" style="color:var(--color-body);">
+            Credit-card calibration. It measures your actual pixels-per-inch against a known physical object, so it's immune to mislabeled specs or OS scaling weirdness.
+          </p>
+        </div>
+        <div>
+          <h3 class="display-sm">Can I use this on a phone?</h3>
+          <p class="body-sm mt-2" style="color:var(--color-body);">
+            Yes. Touch is supported — drag the ruler, drag the calibration card, pinch-friendly tap targets. The vertical edges are particularly nice on phones.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- The interactive ruler (floating) -->
+  <Ruler />
 </Layout>
+
+<script>
+  // Wire the page-level CTA buttons into the ruler's calibration panel
+  function wire() {
+    const ruler = (window as any).__ruler;
+    if (!ruler) return setTimeout(wire, 50);
+
+    const open = (method?: 1 | 2 | 3) => {
+      if (method) ruler.state.calMethod = method;
+      ruler.openCalibration();
+    };
+    document.getElementById("open-ruler-btn")?.addEventListener("click", (e) => {
+      e.preventDefault();
+      open();
+    });
+    document.getElementById("cta-m1")?.addEventListener("click", () => open(1));
+    document.getElementById("cta-m2")?.addEventListener("click", () => open(2));
+    document.getElementById("cta-m3")?.addEventListener("click", () => open(3));
+
+    // Mirror ruler state into the hero chips
+    const eEl = document.getElementById("hero-edge");
+    const pEl = document.getElementById("hero-ppi");
+    const uEl = document.getElementById("hero-unit");
+    const tick = () => {
+      if (eEl) eEl.textContent = ruler.state.edge;
+      if (pEl) pEl.textContent = String(Math.round(ruler.state.ppi));
+      if (uEl) uEl.textContent = ruler.state.unit;
+    };
+    tick();
+    setInterval(tick, 600);
+  }
+  wire();
+</script>

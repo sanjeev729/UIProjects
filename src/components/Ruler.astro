@@ -1,0 +1,981 @@
+---
+/**
+ * Ruler.astro — the main interactive ruler.
+ *
+ * - Renders tick marks on a <canvas> at the selected edge (top/bottom/left/right)
+ * - Supports cm/mm/inch units
+ * - Three calibration methods:
+ *     1. Auto-Detect Device (UA + screen params → suggested PPI)
+ *     2. Screen Diagonal (user types in inches → PPI)
+ *     3. Credit Card Calibration (drag a 85.60×53.98mm rect onto a real card)
+ * - Persists calibration + unit in localStorage
+ * - Keyboard shortcuts: 1/2/3/4 = edge, U = unit cycle, C = calibrate, F = fullscreen, ? = help
+ */
+---
+
+<div id="ruler-root" data-ruler-host></div>
+
+<style>
+  /* The host gets no fixed styles — JS sets size + edge attributes */
+  #ruler-root { position: fixed; z-index: 50; touch-action: none; }
+</style>
+
+<script>
+  // ───────────────────────────────────────────────────────────
+  // Types & state
+  // ───────────────────────────────────────────────────────────
+  type Edge = "top" | "bottom" | "left" | "right";
+  type Unit = "cm" | "mm" | "inch";
+
+  interface State {
+    edge: Edge;
+    unit: Unit;
+    ppi: number; // pixels per inch — the calibration output
+    visible: boolean;
+    fullscreen: boolean;
+    helpOpen: boolean;
+    calOpen: boolean;
+    calMethod: 1 | 2 | 3;
+  }
+
+  const STORAGE_KEY = "bor.calibration.v1";
+
+  const defaultState: State = {
+    edge: "top",
+    unit: "cm",
+    ppi: 96, // CSS reference: 96 CSS px = 1 in
+    visible: true,
+    fullscreen: false,
+    helpOpen: false,
+    calOpen: false,
+    calMethod: 1,
+  };
+
+  // Anchor physical sizes used by calibrations
+  const CARD_W_MM = 85.6; // ISO/IEC 7810 ID-1
+  const CARD_H_MM = 53.98;
+
+  const state: State = { ...defaultState };
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) Object.assign(state, JSON.parse(raw));
+  } catch {/* ignore */}
+
+  // Persist
+  function save() {
+    try {
+      localStorage.setItem(
+        STORAGE_KEY,
+        JSON.stringify({ edge: state.edge, unit: state.unit, ppi: state.ppi })
+      );
+    } catch {/* ignore */}
+  }
+
+  // ───────────────────────────────────────────────────────────
+  // Calibration helpers
+  // ───────────────────────────────────────────────────────────
+
+  /** Convert physical millimetres to CSS pixels at the current calibration. */
+  function mmToCssPx(mm: number): number {
+    // 1 in = 25.4 mm, so 1 mm = ppi / 25.4 px
+    return (state.ppi / 25.4) * mm;
+  }
+  /** CSS pixels to mm. */
+  function cssPxToMm(px: number): number {
+    return (px / state.ppi) * 25.4;
+  }
+  /** CSS pixels to inches. */
+  function cssPxToIn(px: number): number {
+    return px / state.ppi;
+  }
+
+  /**
+   * Method 1 — Auto-Detect Device.
+   * Uses window.devicePixelRatio + UA hints to *suggest* a PPI.
+   * We map common DPIs → 96 baseline. For a real DB we'd ship a JSON of
+   * `{model → ppi}`; here we estimate from DPR with a confidence band.
+   */
+  function autoDetectPpi(): { ppi: number; confidence: "low" | "med" | "high"; reason: string } {
+    const dpr = window.devicePixelRatio || 1;
+    const ua = navigator.userAgent;
+
+    // Heuristic: physical width ÷ CSS width × dpr-style estimate
+    // This is approximate; users should refine with Method 2 or 3.
+    const screenW = window.screen.width;
+    const screenH = window.screen.height;
+
+    // Common device presets (model → diag in inches)
+    const presets: Array<{ ua: RegExp; diag: number; ppi: number; name: string }> = [
+      { ua: /iPhone 15 Pro Max/, diag: 6.7, ppi: 460, name: "iPhone 15 Pro Max" },
+      { ua: /iPhone 15 Pro/, diag: 6.1, ppi: 460, name: "iPhone 15 Pro" },
+      { ua: /iPhone 1[4-5]/, diag: 6.1, ppi: 460, name: "iPhone (14/15)" },
+      { ua: /iPad Pro 11/, diag: 11, ppi: 264, name: "iPad Pro 11″" },
+      { ua: /iPad Pro 12\.9/, diag: 12.9, ppi: 264, name: "iPad Pro 12.9″" },
+      { ua: /MacBook Pro 16/, diag: 16, ppi: 254, name: "MacBook Pro 16″" },
+      { ua: /MacBook Pro 14/, diag: 14, ppi: 254, name: "MacBook Pro 14″" },
+      { ua: /MacBook Air 13/, diag: 13.3, ppi: 227, name: "MacBook Air 13″" },
+      { ua: /Pixel 8 Pro/, diag: 6.7, ppi: 489, name: "Pixel 8 Pro" },
+      { ua: /Pixel 8/, diag: 6.2, ppi: 428, name: "Pixel 8" },
+      { ua: /Galaxy S2[34]/, diag: 6.6, ppi: 390, name: "Galaxy S2x" },
+      { ua: /Surface Pro/, diag: 13, ppi: 267, name: "Surface Pro" },
+    ];
+
+    for (const p of presets) {
+      if (p.ua.test(ua)) {
+        return { ppi: p.ppi, confidence: "high", reason: `Matched ${p.name} (${p.diag}″, ${p.ppi} ppi)` };
+      }
+    }
+
+    // Fallback: estimate from dpr + screen size
+    // Modern desktops are typically 96–150 ppi, mobile 250–500.
+    const isMobile = /Mobi|Android|iPhone|iPad/.test(ua);
+    let ppi = 96 * dpr;
+    if (isMobile) ppi = Math.round(160 + 80 * Math.min(dpr, 4));
+    return {
+      ppi: Math.round(ppi),
+      confidence: "low",
+      reason: `Heuristic from DPR=${dpr.toFixed(2)} (${isMobile ? "mobile" : "desktop"})`,
+    };
+  }
+
+  /** Method 2 — Screen Diagonal. User enters inches; we compute PPI. */
+  function ppiFromDiagonal(diagIn: number): number {
+    if (!diagIn || diagIn <= 0) return state.ppi;
+    // diagPx = √(w² + h²) in *device* pixels = diagCssPx × dpr
+    const w = window.screen.width * (window.devicePixelRatio || 1);
+    const h = window.screen.height * (window.devicePixelRatio || 1);
+    const diagPx = Math.hypot(w, h);
+    return diagPx / diagIn;
+  }
+
+  /** Method 3 — Credit Card. The card overlay is rendered at its physical size in CSS px. */
+  function ppiFromCardSize(renderedCardWidthCssPx: number): number {
+    if (!renderedCardWidthCssPx) return state.ppi;
+    // mm = (cssPx / ppi) × 25.4  →  ppi = (cssPx × 25.4) / mm
+    return (renderedCardWidthCssPx * 25.4) / CARD_W_MM;
+  }
+
+  // ───────────────────────────────────────────────────────────
+  // Ruler rendering (canvas)
+  // ───────────────────────────────────────────────────────────
+  const root = document.getElementById("ruler-root") as HTMLDivElement;
+  let canvas: HTMLCanvasElement | null = null;
+  let ctx: CanvasRenderingContext2D | null = null;
+
+  function buildRuler() {
+    root.innerHTML = "";
+    canvas = document.createElement("canvas");
+    canvas.className = "ruler-canvas";
+    root.appendChild(canvas);
+    ctx = canvas.getContext("2d");
+
+    // Toolbar: floats separately so the ruler stays minimal.
+    const tb = document.createElement("div");
+    tb.className = "ruler-toolbar";
+    tb.setAttribute("role", "toolbar");
+    tb.setAttribute("aria-label", "Ruler controls");
+    tb.id = "ruler-toolbar";
+    document.body.appendChild(tb);
+
+    const edges: Array<[Edge, string]> = [
+      ["top", "Top"],
+      ["bottom", "Bottom"],
+      ["left", "Left"],
+      ["right", "Right"],
+    ];
+    for (const [e, label] of edges) {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.dataset.edge = e;
+      b.title = `Place ruler on ${label.toLowerCase()} edge (${e === "top" ? "1" : e === "bottom" ? "2" : e === "left" ? "3" : "4"})`;
+      b.setAttribute("aria-label", b.title);
+      b.setAttribute("aria-pressed", String(state.edge === e));
+      b.innerHTML = edgeIcon(e);
+      b.addEventListener("click", () => {
+        state.edge = e;
+        save();
+        updateRuler();
+      });
+      tb.appendChild(b);
+    }
+
+    tb.appendChild(divider());
+
+    // Unit cycle: mm → cm → inch → mm
+    const unitBtn = document.createElement("button");
+    unitBtn.type = "button";
+    unitBtn.id = "unit-btn";
+    unitBtn.title = "Cycle units (mm / cm / in) — shortcut: U";
+    unitBtn.textContent = unitLabel(state.unit);
+    unitBtn.addEventListener("click", () => {
+      state.unit = state.unit === "mm" ? "cm" : state.unit === "cm" ? "inch" : "mm";
+      unitBtn.textContent = unitLabel(state.unit);
+      save();
+      updateRuler();
+    });
+    tb.appendChild(unitBtn);
+
+    tb.appendChild(divider());
+
+    const calBtn = document.createElement("button");
+    calBtn.type = "button";
+    calBtn.id = "cal-btn";
+    calBtn.title = "Calibrate — shortcut: C";
+    calBtn.innerHTML = `${iconTune()} <span>Calibrate</span>`;
+    calBtn.addEventListener("click", openCalibration);
+    tb.appendChild(calBtn);
+
+    const fsBtn = document.createElement("button");
+    fsBtn.type = "button";
+    fsBtn.id = "fs-btn";
+    fsBtn.title = "Fullscreen — shortcut: F";
+    fsBtn.innerHTML = iconFullscreen();
+    fsBtn.addEventListener("click", toggleFullscreen);
+    tb.appendChild(fsBtn);
+
+    const helpBtn = document.createElement("button");
+    helpBtn.type = "button";
+    helpBtn.id = "help-btn";
+    helpBtn.title = "Keyboard shortcuts (?)";
+    helpBtn.innerHTML = iconHelp();
+    helpBtn.addEventListener("click", openHelp);
+    tb.appendChild(helpBtn);
+
+    // Make ruler draggable
+    attachDrag(root);
+    positionToolbar();
+    window.addEventListener("resize", () => {
+      updateRuler();
+      positionToolbar();
+    });
+  }
+
+  function divider(): HTMLSpanElement {
+    const s = document.createElement("span");
+    s.className = "divider";
+    return s;
+  }
+
+  function unitLabel(u: Unit): string {
+    return u === "mm" ? "mm" : u === "cm" ? "cm" : "in";
+  }
+
+  function edgeIcon(e: Edge): string {
+    // Tiny inline SVG per edge orientation
+    const stroke = "currentColor";
+    if (e === "top")
+      return `<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="1.5" y="2" width="11" height="2" rx="0.5" fill="${stroke}"/><path d="M3 4v2M5 4v1.5M7 4v2M9 4v1.5M11 4v2" stroke="${stroke}" stroke-width="1"/></svg>`;
+    if (e === "bottom")
+      return `<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="1.5" y="10" width="11" height="2" rx="0.5" fill="${stroke}"/><path d="M3 10V8M5 10V8.5M7 10V8M9 10V8.5M11 10V8" stroke="${stroke}" stroke-width="1"/></svg>`;
+    if (e === "left")
+      return `<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="2" y="1.5" width="2" height="11" rx="0.5" fill="${stroke}"/><path d="M4 3h2M4 5h1.5M4 7h2M4 9h1.5M4 11h2" stroke="${stroke}" stroke-width="1"/></svg>`;
+    return `<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="10" y="1.5" width="2" height="11" rx="0.5" fill="${stroke}"/><path d="M10 3h-2M10 5h-1.5M10 7h-2M10 9h-1.5M10 11h-2" stroke="${stroke}" stroke-width="1"/></svg>`;
+  }
+
+  function iconTune(): string {
+    return `<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M11.5 2.5a2.121 2.121 0 0 1 3 3L6 14l-4 1 1-4 8.5-8.5Z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>`;
+  }
+  function iconFullscreen(): string {
+    return `<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M3 6V3h3M13 6V3h-3M3 10v3h3M13 10v3h-3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+  }
+  function iconHelp(): string {
+    return `<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6.2" stroke="currentColor" stroke-width="1.3"/><path d="M6.3 6.3a1.7 1.7 0 1 1 2.4 1.5c-.6.3-.7.7-.7 1.2M8 11.4v.1" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>`;
+  }
+
+  // ───────────────────────────────────────────────────────────
+  // Ruler sizing & drawing
+  // ───────────────────────────────────────────────────────────
+  const RULER_THICKNESS = 44; // CSS px for the bar height (or width for vertical)
+  const RULER_MAX_CSS_PX = 1280; // cap width so it doesn't span giant monitors in free-floating mode
+
+  function rulerDimensions(): { w: number; h: number } {
+    const horizontal = state.edge === "top" || state.edge === "bottom";
+    if (state.fullscreen) {
+      return horizontal
+        ? { w: window.innerWidth - 24, h: RULER_THICKNESS }
+        : { w: RULER_THICKNESS, h: window.innerHeight - 24 };
+    }
+    if (horizontal) return { w: RULER_MAX_CSS_PX, h: RULER_THICKNESS };
+    return { w: RULER_THICKNESS, h: RULER_MAX_CSS_PX };
+  }
+
+  function positionRuler() {
+    const { w, h } = rulerDimensions();
+    root.style.width = `${w}px`;
+    root.style.height = `${h}px`;
+    root.dataset.edge = state.edge;
+    root.className = "ruler-host" + (state.fullscreen ? " is-fullscreen" : "");
+    if (state.edge === "top") {
+      root.style.top = "12px";
+      root.style.bottom = "auto";
+      root.style.left = "50%";
+      root.style.right = "auto";
+      root.style.transform = "translateX(-50%)";
+    } else if (state.edge === "bottom") {
+      root.style.top = "auto";
+      root.style.bottom = "12px";
+      root.style.left = "50%";
+      root.style.right = "auto";
+      root.style.transform = "translateX(-50%)";
+    } else if (state.edge === "left") {
+      root.style.top = "50%";
+      root.style.bottom = "auto";
+      root.style.left = "12px";
+      root.style.right = "auto";
+      root.style.transform = "translateY(-50%)";
+    } else {
+      root.style.top = "50%";
+      root.style.bottom = "auto";
+      root.style.left = "auto";
+      root.style.right = "12px";
+      root.style.transform = "translateY(-50%)";
+    }
+  }
+
+  function positionToolbar() {
+    const tb = document.getElementById("ruler-toolbar");
+    if (!tb) return;
+    const r = root.getBoundingClientRect();
+    const tbRect = tb.getBoundingClientRect();
+    let top = r.bottom + 12;
+    let left = r.left + r.width / 2 - tbRect.width / 2;
+    if (state.edge === "bottom") top = r.top - tbRect.height - 12;
+    if (state.edge === "left" || state.edge === "right") {
+      top = r.top + r.height / 2 - tbRect.height / 2;
+      left = state.edge === "left" ? r.right + 12 : r.left - tbRect.width - 12;
+    }
+    // Clamp to viewport
+    left = Math.max(8, Math.min(left, window.innerWidth - tbRect.width - 8));
+    top = Math.max(8, Math.min(top, window.innerHeight - tbRect.height - 8));
+    tb.style.position = "fixed";
+    tb.style.left = `${left}px`;
+    tb.style.top = `${top}px`;
+    tb.style.transform = "none";
+  }
+
+  /**
+   * The core draw routine. We pick a "major" tick spacing based on unit,
+   * then subdivide (e.g. cm has 10 mm minor ticks).
+   */
+  function drawRuler() {
+    if (!canvas || !ctx) return;
+    const dpr = window.devicePixelRatio || 1;
+    const horizontal = state.edge === "top" || state.edge === "bottom";
+    const cssW = horizontal ? root.clientWidth : root.clientHeight;
+    const cssH = RULER_THICKNESS;
+
+    canvas.width = Math.round(cssW * dpr);
+    canvas.height = Math.round(cssH * dpr);
+    canvas.style.width = `${cssW}px`;
+    canvas.style.height = `${cssH}px`;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, cssW, cssH);
+
+    // Background
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, cssW, cssH);
+    // Subtle bottom edge (or right edge if vertical)
+    ctx.strokeStyle = "#ebebeb";
+    ctx.lineWidth = 1;
+    if (horizontal) {
+      ctx.beginPath();
+      ctx.moveTo(0, cssH - 0.5);
+      ctx.lineTo(cssW, cssH - 0.5);
+      ctx.stroke();
+    } else {
+      ctx.beginPath();
+      ctx.moveTo(cssW - 0.5, 0);
+      ctx.lineTo(cssW - 0.5, cssH);
+      ctx.stroke();
+    }
+
+    // Determine tick spacing
+    const unitsPerInch = state.unit === "inch" ? 1 : state.unit === "cm" ? 2.54 : 25.4;
+    const pxPerUnit = state.ppi / unitsPerInch; // CSS px per current unit
+
+    // Choose a major spacing that produces ~50–120 px on screen
+    const desiredMajorPx = 80;
+    let majors = [1, 2, 5, 10, 20, 50, 100]; // unit-multipliers
+    let majorStep = majors[0];
+    for (const m of majors) {
+      if (m * pxPerUnit >= desiredMajorPx) {
+        majorStep = m;
+        break;
+      }
+    }
+    const minorPerMajor = state.unit === "inch" ? 8 : 10; // 8ths of an inch, 10 mm
+
+    // Origin (0 mark) is centered on the ruler bar.
+    const originCss = horizontal ? cssW / 2 : cssH / 2;
+
+    // Draw from origin outward in both directions
+    const range = horizontal ? cssW : cssH;
+    drawAxis(ctx, {
+      originCss,
+      range,
+      cssW,
+      cssH,
+      horizontal,
+      pxPerUnit,
+      majorStep,
+      minorPerMajor,
+    });
+  }
+
+  interface AxisOpts {
+    originCss: number;
+    range: number;
+    cssW: number;
+    cssH: number;
+    horizontal: boolean;
+    pxPerUnit: number;
+    majorStep: number;
+    minorPerMajor: number;
+  }
+
+  function drawAxis(c: CanvasRenderingContext2D, o: AxisOpts) {
+    // Negative direction
+    drawDirection(c, o, -1);
+    // Positive direction
+    drawDirection(c, o, +1);
+    // 0 mark (slightly stronger)
+    drawMajorTick(c, o.originCss, o, true);
+  }
+
+  function drawDirection(c: CanvasRenderingContext2D, o: AxisOpts, dir: -1 | 1) {
+    const minorPx = (o.pxPerUnit * o.majorStep) / o.minorPerMajor;
+    let i = 1;
+    // Walk outward until past edge
+    while (true) {
+      const pos = o.originCss + dir * i * minorPx;
+      const inRange = o.horizontal ? pos >= 0 && pos <= o.cssW : pos >= 0 && pos <= o.cssH;
+      if (!inRange && i > 100) break;
+      if (!inRange) { i++; continue; }
+      const isMajor = i % o.minorPerMajor === 0;
+      drawTick(c, pos, o, isMajor, i / o.minorPerMajor * o.majorStep * dir);
+      i++;
+      if (i > 5000) break; // safety
+    }
+  }
+
+  function drawTick(
+    c: CanvasRenderingContext2D,
+    pos: number,
+    o: AxisOpts,
+    isMajor: boolean,
+    labelValue: number
+  ) {
+    const cssH = o.cssH;
+    const cssW = o.cssW;
+    if (o.horizontal) {
+      const tickH = isMajor ? cssH * 0.55 : cssH * 0.3;
+      c.strokeStyle = isMajor ? "#171717" : "#a1a1a1";
+      c.lineWidth = isMajor ? 1.2 : 0.8;
+      c.beginPath();
+      c.moveTo(pos + 0.5, cssH - tickH);
+      c.lineTo(pos + 0.5, cssH - 0.5);
+      c.stroke();
+      if (isMajor) {
+        c.fillStyle = "#171717";
+        c.font = "500 11px 'Geist Mono', ui-monospace, monospace";
+        c.textAlign = "center";
+        c.textBaseline = "alphabetic";
+        const label = formatLabel(labelValue, state.unit);
+        c.fillText(label, pos, cssH - tickH - 4);
+      }
+    } else {
+      const tickW = isMajor ? cssW * 0.55 : cssW * 0.3;
+      c.strokeStyle = isMajor ? "#171717" : "#a1a1a1";
+      c.lineWidth = isMajor ? 1.2 : 0.8;
+      c.beginPath();
+      c.moveTo(cssW - tickW, pos + 0.5);
+      c.lineTo(cssW - 0.5, pos + 0.5);
+      c.stroke();
+      if (isMajor) {
+        c.save();
+        c.translate(cssW - tickW - 4, pos);
+        c.rotate(-Math.PI / 2);
+        c.fillStyle = "#171717";
+        c.font = "500 11px 'Geist Mono', ui-monospace, monospace";
+        c.textAlign = "center";
+        c.textBaseline = "alphabetic";
+        c.fillText(formatLabel(labelValue, state.unit), 0, 0);
+        c.restore();
+      }
+    }
+  }
+
+  function drawMajorTick(c: CanvasRenderingContext2D, pos: number, o: AxisOpts, isOrigin: boolean) {
+    const cssH = o.cssH;
+    const cssW = o.cssW;
+    if (o.horizontal) {
+      c.strokeStyle = "#171717";
+      c.lineWidth = 1.6;
+      c.beginPath();
+      c.moveTo(pos + 0.5, 0);
+      c.lineTo(pos + 0.5, cssH - 0.5);
+      c.stroke();
+    } else {
+      c.strokeStyle = "#171717";
+      c.lineWidth = 1.6;
+      c.beginPath();
+      c.moveTo(0, pos + 0.5);
+      c.lineTo(cssW - 0.5, pos + 0.5);
+      c.stroke();
+    }
+  }
+
+  function formatLabel(v: number, unit: Unit): string {
+    // Drop trailing .0
+    const rounded = Math.round(v * 100) / 100;
+    if (unit === "inch") {
+      // Render as fraction for halves/quarters when small, else decimal
+      if (Number.isInteger(rounded)) return `${rounded}`;
+      if (Math.abs(rounded * 2 - Math.round(rounded * 2)) < 0.01) {
+        return `${rounded}`;
+      }
+      return rounded.toFixed(2);
+    }
+    return `${rounded}`;
+  }
+
+  function updateRuler() {
+    positionRuler();
+    drawRuler();
+    // Update aria-pressed on edge buttons
+    const tb = document.getElementById("ruler-toolbar");
+    tb?.querySelectorAll<HTMLButtonElement>("button[data-edge]").forEach((b) => {
+      b.setAttribute("aria-pressed", String(b.dataset.edge === state.edge));
+    });
+    const unitBtn = document.getElementById("unit-btn");
+    if (unitBtn) unitBtn.textContent = unitLabel(state.unit);
+    positionToolbar();
+    // Update live PPI badge if present
+    const live = document.getElementById("ppi-readout");
+    if (live) live.textContent = `${Math.round(state.ppi)} ppi`;
+  }
+
+  // ───────────────────────────────────────────────────────────
+  // Drag-to-reposition
+  // ───────────────────────────────────────────────────────────
+  function attachDrag(el: HTMLElement) {
+    let startX = 0, startY = 0, origLeft = 0, origTop = 0, dragging = false;
+    el.addEventListener("pointerdown", (e) => {
+      if (state.fullscreen) return; // disable drag in fullscreen
+      dragging = true;
+      el.setPointerCapture(e.pointerId);
+      el.classList.add("is-dragging");
+      startX = e.clientX;
+      startY = e.clientY;
+      const r = el.getBoundingClientRect();
+      origLeft = r.left;
+      origTop = r.top;
+      el.style.transform = "none";
+      el.style.left = `${r.left}px`;
+      el.style.top = `${r.top}px`;
+      el.style.right = "auto";
+      el.style.bottom = "auto";
+      e.preventDefault();
+    });
+    el.addEventListener("pointermove", (e) => {
+      if (!dragging) return;
+      el.style.left = `${origLeft + (e.clientX - startX)}px`;
+      el.style.top = `${origTop + (e.clientY - startY)}px`;
+      positionToolbar();
+    });
+    const end = (e: PointerEvent) => {
+      if (!dragging) return;
+      dragging = false;
+      try { el.releasePointerCapture(e.pointerId); } catch {/* ignore */}
+      el.classList.remove("is-dragging");
+      // Re-snap to nearest edge if close
+      snapToEdge(el);
+      updateRuler();
+    };
+    el.addEventListener("pointerup", end);
+    el.addEventListener("pointercancel", end);
+  }
+
+  function snapToEdge(el: HTMLElement) {
+    const r = el.getBoundingClientRect();
+    const cx = r.left + r.width / 2;
+    const cy = r.top + r.height / 2;
+    const dist = {
+      top: cy,
+      bottom: window.innerHeight - cy,
+      left: cx,
+      right: window.innerWidth - cx,
+    };
+    const nearest = (Object.entries(dist) as [Edge, number][]).sort((a, b) => a[1] - b[1])[0][0];
+    state.edge = nearest;
+    save();
+  }
+
+  // ───────────────────────────────────────────────────────────
+  // Fullscreen
+  // ───────────────────────────────────────────────────────────
+  function toggleFullscreen() {
+    state.fullscreen = !state.fullscreen;
+    updateRuler();
+  }
+
+  // ───────────────────────────────────────────────────────────
+  // Calibration panel
+  // ───────────────────────────────────────────────────────────
+  function openCalibration() {
+    state.calOpen = true;
+    renderCalPanel();
+  }
+  function closeCalibration() {
+    state.calOpen = false;
+    const panel = document.getElementById("cal-panel");
+    const back = document.getElementById("cal-backdrop");
+    panel?.remove();
+    back?.remove();
+  }
+
+  function renderCalPanel() {
+    closeCalibration();
+    const back = document.createElement("div");
+    back.className = "cal-backdrop";
+    back.id = "cal-backdrop";
+    back.addEventListener("click", closeCalibration);
+    document.body.appendChild(back);
+
+    const panel = document.createElement("div");
+    panel.className = "cal-panel";
+    panel.id = "cal-panel";
+    panel.setAttribute("role", "dialog");
+    panel.setAttribute("aria-modal", "true");
+    panel.setAttribute("aria-label", "Calibrate ruler");
+    panel.innerHTML = `
+      <div class="flex items-center justify-between mb-5">
+        <div>
+          <div class="caption-mono" style="color:var(--color-mute);">Calibration</div>
+          <h2 class="display-md" style="margin-top:4px;">Match your screen.</h2>
+        </div>
+        <button id="cal-close" class="btn-secondary btn-sm" aria-label="Close" style="height:32px;width:32px;padding:0;border-radius:9999px;">✕</button>
+      </div>
+
+      <div class="flex gap-2 mb-5" role="tablist" aria-label="Calibration methods">
+        <div class="tab-pill" role="tab" data-method="1" aria-selected="${state.calMethod === 1}" tabindex="0">1. Auto-Detect Device</div>
+        <div class="tab-pill" role="tab" data-method="2" aria-selected="${state.calMethod === 2}" tabindex="0">2. Screen Diagonal</div>
+        <div class="tab-pill" role="tab" data-method="3" aria-selected="${state.calMethod === 3}" tabindex="0">3. Credit Card</div>
+      </div>
+
+      <div id="cal-body"></div>
+
+      <div class="mt-6 flex items-center justify-between" style="border-top:1px solid var(--color-hairline);padding-top:16px;">
+        <div class="body-sm" style="color:var(--color-body);">
+          Current: <span id="ppi-readout" style="font-family:var(--font-mono);font-weight:500;color:var(--color-ink);">${Math.round(state.ppi)} ppi</span>
+        </div>
+        <button id="cal-reset" class="btn-secondary btn-sm">Reset to 96 ppi</button>
+      </div>
+    `;
+    document.body.appendChild(panel);
+
+    panel.querySelector("#cal-close")!.addEventListener("click", closeCalibration);
+    panel.querySelector("#cal-reset")!.addEventListener("click", () => {
+      state.ppi = 96;
+      save();
+      updateRuler();
+      renderCalPanel();
+    });
+    panel.querySelectorAll<HTMLDivElement>(".tab-pill").forEach((t) => {
+      t.addEventListener("click", () => {
+        state.calMethod = Number(t.dataset.method) as 1 | 2 | 3;
+        panel.querySelectorAll(".tab-pill").forEach((x) => x.setAttribute("aria-selected", "false"));
+        t.setAttribute("aria-selected", "true");
+        renderCalBody();
+      });
+    });
+
+    renderCalBody();
+  }
+
+  function renderCalBody() {
+    const body = document.getElementById("cal-body");
+    if (!body) return;
+    if (state.calMethod === 1) body.innerHTML = calMethod1Html();
+    else if (state.calMethod === 2) body.innerHTML = calMethod2Html();
+    else body.innerHTML = calMethod3Html();
+    wireCalBody();
+  }
+
+  function calMethod1Html(): string {
+    const guess = autoDetectPpi();
+    return `
+      <p class="body-sm" style="color:var(--color-body);">
+        We can usually identify your device from its user-agent and pick a factory-calibrated PPI. This is the fastest method, but if your browser zoom is not 100% the result will be slightly off.
+      </p>
+      <div class="card-soft mt-4">
+        <div class="caption-mono" style="color:var(--color-mute);">Detected</div>
+        <div class="display-sm mt-1">${guess.ppi} ppi</div>
+        <div class="body-sm mt-1" style="color:var(--color-body);">${escapeHtml(guess.reason)}</div>
+        <div class="mt-2">
+          <span class="chip-mono">confidence: ${guess.confidence}</span>
+        </div>
+      </div>
+      <div class="mt-5 flex gap-2">
+        <button id="m1-apply" class="btn-primary">Apply ${guess.ppi} ppi</button>
+        <button id="m1-recheck" class="btn-secondary">Re-detect</button>
+      </div>
+    `;
+  }
+
+  function calMethod2Html(): string {
+    return `
+      <p class="body-sm" style="color:var(--color-body);">
+        Look up your monitor or laptop's diagonal screen size in inches (printed on the spec sheet, or search "<i>model</i> display size"). Type it in and we'll compute the PPI.
+      </p>
+      <label class="block mt-4">
+        <span class="caption-mono" style="color:var(--color-mute);">Diagonal (inches)</span>
+        <input id="m2-diag" type="number" inputmode="decimal" min="3" max="65" step="0.01" value="13.3"
+          class="block w-full mt-2" style="height:44px;border:1px solid var(--color-hairline);border-radius:6px;padding:0 12px;font-size:14px;" />
+      </label>
+      <div class="mt-3 body-sm" style="color:var(--color-body);">
+        Estimated PPI: <span id="m2-ppi" style="font-family:var(--font-mono);color:var(--color-ink);">—</span>
+      </div>
+      <div class="mt-5 flex gap-2">
+        <button id="m2-apply" class="btn-primary">Apply</button>
+      </div>
+    `;
+  }
+
+  function calMethod3Html(): string {
+    return `
+      <p class="body-sm" style="color:var(--color-body);">
+        Place a standard credit-card-sized object on your screen. Drag the blue rectangle's <b>bottom-right handle</b> until it exactly matches the card on screen, then click <b>Apply</b>. This is the most accurate method.
+      </p>
+      <div class="cc-stage mt-4" id="cc-stage">
+        <div class="cc-card" id="cc-card" style="width:200px; height:126px;">
+          <span>85.60 × 53.98 mm</span>
+          <div class="cc-handle br" id="cc-handle-br" aria-label="Resize"></div>
+        </div>
+      </div>
+      <div class="mt-3 body-sm" style="color:var(--color-body);">
+        Detected width: <span id="cc-w" style="font-family:var(--font-mono);color:var(--color-ink);">—</span> CSS px
+        &nbsp;·&nbsp; PPI: <span id="cc-ppi" style="font-family:var(--font-mono);color:var(--color-ink);">—</span>
+      </div>
+      <div class="mt-5 flex gap-2">
+        <button id="m3-apply" class="btn-primary">Apply</button>
+        <button id="m3-center" class="btn-secondary">Center card</button>
+      </div>
+    `;
+  }
+
+  function wireCalBody() {
+    if (state.calMethod === 1) {
+      const apply = document.getElementById("m1-apply");
+      const re = document.getElementById("m1-recheck");
+      apply?.addEventListener("click", () => {
+        const g = autoDetectPpi();
+        state.ppi = g.ppi;
+        save();
+        updateRuler();
+        closeCalibration();
+      });
+      re?.addEventListener("click", () => renderCalBody());
+      return;
+    }
+    if (state.calMethod === 2) {
+      const inp = document.getElementById("m2-diag") as HTMLInputElement | null;
+      const out = document.getElementById("m2-ppi");
+      const apply = document.getElementById("m2-apply");
+      const update = () => {
+        const v = Number(inp?.value);
+        const ppi = ppiFromDiagonal(v);
+        if (out) out.textContent = `${Math.round(ppi)} ppi`;
+      };
+      inp?.addEventListener("input", update);
+      update();
+      apply?.addEventListener("click", () => {
+        const v = Number(inp?.value);
+        if (!v) return;
+        state.ppi = ppiFromDiagonal(v);
+        save();
+        updateRuler();
+        closeCalibration();
+      });
+      return;
+    }
+    // Method 3 — credit card
+    setupCreditCardStage();
+  }
+
+  function setupCreditCardStage() {
+    const stage = document.getElementById("cc-stage");
+    const card = document.getElementById("cc-card");
+    const handle = document.getElementById("cc-handle-br");
+    const wOut = document.getElementById("cc-w");
+    const ppiOut = document.getElementById("cc-ppi");
+    const apply = document.getElementById("m3-apply");
+    const center = document.getElementById("m3-center");
+    if (!stage || !card || !handle) return;
+
+    // Start centered with the right physical aspect ratio.
+    const aspect = CARD_H_MM / CARD_W_MM;
+    const initW = 220;
+    card.style.width = `${initW}px`;
+    card.style.height = `${Math.round(initW * aspect)}px`;
+    positionCardCenter();
+
+    function positionCardCenter() {
+      const sr = stage.getBoundingClientRect();
+      const cr = card.getBoundingClientRect();
+      card.style.left = `${sr.width / 2 - cr.width / 2}px`;
+      card.style.top = `${sr.height / 2 - cr.height / 2}px`;
+      updateReadout();
+    }
+
+    function updateReadout() {
+      const w = card.getBoundingClientRect().width;
+      const ppi = ppiFromCardSize(w);
+      if (wOut) wOut.textContent = `${w.toFixed(1)}`;
+      if (ppiOut) ppiOut.textContent = `${Math.round(ppi)}`;
+    }
+
+    // Drag the card body
+    let dragOffX = 0, dragOffY = 0, dragging = false;
+    card.addEventListener("pointerdown", (e) => {
+      if ((e.target as HTMLElement).classList.contains("cc-handle")) return;
+      dragging = true;
+      card.setPointerCapture(e.pointerId);
+      card.classList.add("is-dragging");
+      const sr = stage.getBoundingClientRect();
+      const cr = card.getBoundingClientRect();
+      dragOffX = e.clientX - cr.left;
+      dragOffY = e.clientY - cr.top;
+      e.preventDefault();
+    });
+    const endDrag = (e: PointerEvent) => {
+      dragging = false;
+      try { card.releasePointerCapture(e.pointerId); } catch {/* ignore */}
+      card.classList.remove("is-dragging");
+    };
+    card.addEventListener("pointermove", (e) => {
+      if (!dragging) return;
+      const sr = stage.getBoundingClientRect();
+      const cr = card.getBoundingClientRect();
+      let nx = e.clientX - sr.left - dragOffX;
+      let ny = e.clientY - sr.top - dragOffY;
+      nx = Math.max(0, Math.min(nx, sr.width - cr.width));
+      ny = Math.max(0, Math.min(ny, sr.height - cr.height));
+      card.style.left = `${nx}px`;
+      card.style.top = `${ny}px`;
+    });
+    card.addEventListener("pointerup", endDrag);
+    card.addEventListener("pointercancel", endDrag);
+
+    // Resize via bottom-right handle, preserving aspect
+    let resizing = false, startW = 0, startX = 0, startY = 0;
+    handle.addEventListener("pointerdown", (e) => {
+      resizing = true;
+      handle.setPointerCapture(e.pointerId);
+      startW = card.getBoundingClientRect().width;
+      startX = e.clientX;
+      startY = e.clientY;
+      e.preventDefault();
+    });
+    handle.addEventListener("pointermove", (e) => {
+      if (!resizing) return;
+      const dx = e.clientX - startX;
+      const newW = Math.max(60, Math.min(560, startW + dx));
+      card.style.width = `${newW}px`;
+      card.style.height = `${Math.round(newW * aspect)}px`;
+      updateReadout();
+    });
+    const endResize = (e: PointerEvent) => {
+      resizing = false;
+      try { handle.releasePointerCapture(e.pointerId); } catch {/* ignore */}
+    };
+    handle.addEventListener("pointerup", endResize);
+    handle.addEventListener("pointercancel", endResize);
+
+    apply?.addEventListener("click", () => {
+      const w = card.getBoundingClientRect().width;
+      state.ppi = ppiFromCardSize(w);
+      save();
+      updateRuler();
+      closeCalibration();
+    });
+    center?.addEventListener("click", positionCardCenter);
+  }
+
+  // ───────────────────────────────────────────────────────────
+  // Help overlay
+  // ───────────────────────────────────────────────────────────
+  function openHelp() {
+    const back = document.createElement("div");
+    back.className = "cal-backdrop";
+    back.addEventListener("click", () => back.remove());
+    const panel = document.createElement("div");
+    panel.className = "cal-panel";
+    panel.setAttribute("role", "dialog");
+    panel.setAttribute("aria-label", "Keyboard shortcuts");
+    panel.innerHTML = `
+      <div class="flex items-center justify-between mb-3">
+        <h2 class="display-md">Shortcuts.</h2>
+        <button class="btn-secondary btn-sm" id="h-close" aria-label="Close" style="height:32px;width:32px;padding:0;border-radius:9999px;">✕</button>
+      </div>
+      <ul class="grid grid-cols-2 gap-x-6 gap-y-2 body-md">
+        <li class="flex justify-between"><span>Top edge</span><span class="caption-mono">1</span></li>
+        <li class="flex justify-between"><span>Bottom edge</span><span class="caption-mono">2</span></li>
+        <li class="flex justify-between"><span>Left edge</span><span class="caption-mono">3</span></li>
+        <li class="flex justify-between"><span>Right edge</span><span class="caption-mono">4</span></li>
+        <li class="flex justify-between"><span>Cycle units</span><span class="caption-mono">U</span></li>
+        <li class="flex justify-between"><span>Calibrate</span><span class="caption-mono">C</span></li>
+        <li class="flex justify-between"><span>Fullscreen</span><span class="caption-mono">F</span></li>
+        <li class="flex justify-between"><span>Show shortcuts</span><span class="caption-mono">?</span></li>
+      </ul>
+    `;
+    document.body.appendChild(back);
+    document.body.appendChild(panel);
+    panel.querySelector("#h-close")!.addEventListener("click", () => {
+      panel.remove();
+      back.remove();
+    });
+  }
+
+  // ───────────────────────────────────────────────────────────
+  // Keyboard shortcuts
+  // ───────────────────────────────────────────────────────────
+  window.addEventListener("keydown", (e) => {
+    if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    const k = e.key.toLowerCase();
+    if (k === "1") { state.edge = "top"; save(); updateRuler(); }
+    else if (k === "2") { state.edge = "bottom"; save(); updateRuler(); }
+    else if (k === "3") { state.edge = "left"; save(); updateRuler(); }
+    else if (k === "4") { state.edge = "right"; save(); updateRuler(); }
+    else if (k === "u") {
+      state.unit = state.unit === "mm" ? "cm" : state.unit === "cm" ? "inch" : "mm";
+      save(); updateRuler();
+    }
+    else if (k === "c") openCalibration();
+    else if (k === "f") toggleFullscreen();
+    else if (k === "?" || k === "/") openHelp();
+    else if (k === "escape") {
+      closeCalibration();
+      document.querySelectorAll(".cal-backdrop").forEach((b) => b.remove());
+      document.getElementById("help-panel")?.remove();
+    }
+  });
+
+  // ───────────────────────────────────────────────────────────
+  // Util
+  // ───────────────────────────────────────────────────────────
+  function escapeHtml(s: string): string {
+    return s.replace(/[&<>"']/g, (c) => ({
+      "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+    }[c]!));
+  }
+
+  // ───────────────────────────────────────────────────────────
+  // Boot
+  // ───────────────────────────────────────────────────────────
+  buildRuler();
+  updateRuler();
+  // Expose for the page-level demo button
+  (window as any).__ruler = { openCalibration, updateRuler, state };
+</script>

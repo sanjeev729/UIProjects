@@ -1,0 +1,446 @@
+@import "tailwindcss";
+
+/* ──────────────────────────────────────────────────────────
+   Vercel-inspired design tokens (see DESIGN.md)
+   ────────────────────────────────────────────────────────── */
+@theme {
+  /* Colors — Vercel ink + canvas + gray scale */
+  --color-ink: #171717;
+  --color-on-primary: #ffffff;
+  --color-body: #4d4d4d;
+  --color-mute: #888888;
+  --color-hairline: #ebebeb;
+  --color-hairline-strong: #a1a1a1;
+  --color-canvas: #ffffff;
+  --color-canvas-soft: #fafafa;
+  --color-canvas-soft-2: #f5f5f5;
+  --color-link: #0070f3;
+  --color-link-deep: #0761d1;
+  --color-link-bg-soft: #d3e5ff;
+  --color-success: #0070f3;
+  --color-error: #ee0000;
+  --color-error-soft: #f7d4d6;
+  --color-error-deep: #c50000;
+  --color-warning: #f5a623;
+  --color-warning-soft: #ffefcf;
+  --color-warning-deep: #ab570a;
+  --color-violet: #7928ca;
+  --color-violet-soft: #d8ccf1;
+  --color-violet-deep: #4c2889;
+  --color-cyan: #50e3c2;
+  --color-cyan-soft: #aaffec;
+  --color-cyan-deep: #29bc9b;
+  --color-pink: #ff0080;
+  --color-magenta: #eb367f;
+
+  /* Font families — Geist + Geist Mono via Google Fonts CDN fallback.
+     If local Geist is unavailable the system falls back gracefully. */
+  --font-sans: "Geist", "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "Geist Mono", "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, monospace;
+
+  /* Spacing — base 4px; tokens match DESIGN.md */
+  --spacing-xxs: 4px;
+  --spacing-xs: 8px;
+  --spacing-sm: 12px;
+  --spacing-md: 16px;
+  --spacing-lg: 24px;
+  --spacing-xl: 32px;
+  --spacing-2xl: 40px;
+  --spacing-3xl: 48px;
+  --spacing-4xl: 64px;
+  --spacing-5xl: 96px;
+  --spacing-6xl: 128px;
+  --spacing-section: 192px;
+
+  /* Radii */
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-pill-sm: 64px;
+  --radius-pill: 100px;
+}
+
+/* ──────────────────────────────────────────────────────────
+   Base layer
+   ────────────────────────────────────────────────────────── */
+@layer base {
+  :root {
+    color-scheme: light;
+  }
+
+  html,
+  body {
+    margin: 0;
+    width: 100%;
+    min-height: 100%;
+    background: var(--color-canvas-soft);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+    font-feature-settings: "ss01", "ss02", "cv11";
+  }
+
+  body {
+    /* prevent text selection on long-press during drag on the ruler */
+    -webkit-user-select: none;
+    user-select: none;
+  }
+
+  ::selection {
+    background: var(--color-ink);
+    color: #f2f2f2;
+  }
+
+  a {
+    color: inherit;
+    text-decoration: none;
+  }
+}
+
+/* ──────────────────────────────────────────────────────────
+   Vercel-styled utilities (mirror components/typography in DESIGN.md)
+   ────────────────────────────────────────────────────────── */
+@layer components {
+  .container-page {
+    max-width: 1400px;
+    margin-inline: auto;
+    padding-inline: 24px;
+  }
+  @media (max-width: 600px) {
+    .container-page { padding-inline: 16px; }
+  }
+
+  .display-xl {
+    font-family: var(--font-sans);
+    font-size: 48px;
+    font-weight: 600;
+    line-height: 48px;
+    letter-spacing: -2.4px;
+  }
+  .display-lg {
+    font-family: var(--font-sans);
+    font-size: 32px;
+    font-weight: 600;
+    line-height: 40px;
+    letter-spacing: -1.28px;
+  }
+  .display-md {
+    font-family: var(--font-sans);
+    font-size: 24px;
+    font-weight: 600;
+    line-height: 32px;
+    letter-spacing: -0.96px;
+  }
+  .display-sm {
+    font-family: var(--font-sans);
+    font-size: 20px;
+    font-weight: 600;
+    line-height: 28px;
+    letter-spacing: -0.6px;
+  }
+  .body-lg {
+    font-family: var(--font-sans);
+    font-size: 18px;
+    font-weight: 400;
+    line-height: 28px;
+  }
+  .body-md {
+    font-family: var(--font-sans);
+    font-size: 16px;
+    font-weight: 400;
+    line-height: 24px;
+  }
+  .body-sm {
+    font-family: var(--font-sans);
+    font-size: 14px;
+    font-weight: 400;
+    line-height: 20px;
+    letter-spacing: -0.28px;
+  }
+  .caption {
+    font-family: var(--font-sans);
+    font-size: 12px;
+    line-height: 16px;
+  }
+  .caption-mono {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 16px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .code {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    line-height: 20px;
+  }
+
+  /* Buttons */
+  .btn-primary {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    height: 40px;
+    padding: 0 16px;
+    border-radius: var(--radius-pill);
+    background: var(--color-ink);
+    color: var(--color-on-primary);
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 20px;
+    transition: transform 120ms ease, background 120ms ease;
+  }
+  .btn-primary:hover { background: #2a2a2a; }
+  .btn-primary:active { transform: scale(0.98); }
+
+  .btn-secondary {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    height: 40px;
+    padding: 0 16px;
+    border-radius: var(--radius-pill);
+    background: var(--color-canvas);
+    color: var(--color-ink);
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 20px;
+    border: 1px solid var(--color-hairline);
+    transition: transform 120ms ease;
+  }
+  .btn-secondary:hover { background: var(--color-canvas-soft-2); }
+  .btn-secondary:active { transform: scale(0.98); }
+
+  .btn-sm {
+    height: 32px;
+    padding: 0 12px;
+    font-size: 13px;
+  }
+
+  /* Cards */
+  .card {
+    background: var(--color-canvas);
+    border: 1px solid var(--color-hairline);
+    border-radius: var(--radius-md);
+    padding: 24px;
+    box-shadow:
+      0px 1px 1px rgba(0, 0, 0, 0.02),
+      0px 2px 2px rgba(0, 0, 0, 0.04);
+  }
+  .card-soft {
+    background: var(--color-canvas-soft);
+    border: 1px solid var(--color-hairline);
+    border-radius: var(--radius-md);
+    padding: 24px;
+  }
+
+  /* Nav */
+  .nav-link {
+    color: var(--color-body);
+    font-size: 14px;
+    line-height: 20px;
+    padding: 8px 12px;
+    border-radius: var(--radius-pill);
+    transition: background 120ms ease, color 120ms ease;
+  }
+  .nav-link:hover {
+    color: var(--color-ink);
+    background: var(--color-canvas-soft-2);
+  }
+
+  /* Mono eyebrow / chip */
+  .chip-mono {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    background: var(--color-canvas);
+    border: 1px solid var(--color-hairline);
+    border-radius: var(--radius-pill);
+    color: var(--color-body);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 16px;
+  }
+
+  /* Section bands */
+  .band-soft {
+    background: var(--color-canvas-soft);
+    color: var(--color-ink);
+  }
+  .band-dark {
+    background: var(--color-ink);
+    color: var(--color-on-primary);
+  }
+}
+
+/* ──────────────────────────────────────────────────────────
+   The Vercel mesh-gradient atmospheric backdrop (hero only)
+   ────────────────────────────────────────────────────────── */
+.mesh-gradient {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(50% 50% at 15% 20%, #007cf0 0%, rgba(0, 124, 240, 0) 60%),
+    radial-gradient(45% 55% at 85% 25%, #7928ca 0%, rgba(121, 40, 202, 0) 60%),
+    radial-gradient(55% 55% at 30% 80%, #ff0080 0%, rgba(255, 0, 128, 0) 60%),
+    radial-gradient(50% 50% at 75% 75%, #f9cb28 0%, rgba(249, 203, 40, 0) 60%),
+    radial-gradient(40% 40% at 50% 50%, #50e3c2 0%, rgba(80, 227, 194, 0) 60%);
+  filter: blur(40px) saturate(120%);
+  opacity: 0.85;
+  mask-image: linear-gradient(180deg, #000 0%, #000 70%, transparent 100%);
+  -webkit-mask-image: linear-gradient(180deg, #000 0%, #000 70%, transparent 100%);
+}
+
+/* ──────────────────────────────────────────────────────────
+   Ruler canvas chrome
+   ────────────────────────────────────────────────────────── */
+.ruler-host {
+  position: fixed;
+  z-index: 50;
+  background: var(--color-canvas);
+  border: 1px solid var(--color-hairline);
+  box-shadow:
+    0 1px 1px rgba(0,0,0,0.04),
+    0 4px 16px -4px rgba(0,0,0,0.08);
+  border-radius: 6px;
+  touch-action: none;
+}
+.ruler-host[data-edge="top"]    { top: 12px; left: 50%; transform: translateX(-50%); }
+.ruler-host[data-edge="bottom"] { bottom: 12px; left: 50%; transform: translateX(-50%); }
+.ruler-host[data-edge="left"]   { left: 12px; top: 50%; transform: translateY(-50%); }
+.ruler-host[data-edge="right"]  { right: 12px; top: 50%; transform: translateY(-50%); }
+
+.ruler-host.is-dragging { cursor: grabbing; }
+
+/* The toolbar that holds calibrate / unit / fullscreen buttons */
+.ruler-toolbar {
+  position: fixed;
+  z-index: 60;
+  background: var(--color-ink);
+  color: var(--color-on-primary);
+  border-radius: var(--radius-pill);
+  padding: 6px;
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+  box-shadow:
+    0 1px 1px rgba(0,0,0,0.05),
+    0 8px 24px -6px rgba(0,0,0,0.25);
+  font-size: 13px;
+  user-select: none;
+}
+.ruler-toolbar button {
+  appearance: none;
+  background: transparent;
+  color: inherit;
+  border: 0;
+  font: inherit;
+  cursor: pointer;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: var(--radius-pill);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: background 120ms ease;
+}
+.ruler-toolbar button:hover { background: rgba(255,255,255,0.10); }
+.ruler-toolbar button[aria-pressed="true"] { background: rgba(255,255,255,0.18); }
+.ruler-toolbar .divider {
+  width: 1px; height: 20px; background: rgba(255,255,255,0.15);
+}
+
+/* Calibration panel */
+.cal-panel {
+  position: fixed;
+  z-index: 70;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  width: min(640px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+  overflow: auto;
+  background: var(--color-canvas);
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--radius-lg);
+  box-shadow:
+    0 1px 1px rgba(0,0,0,0.05),
+    0 8px 16px -4px rgba(0,0,0,0.06),
+    0 24px 32px -8px rgba(0,0,0,0.10);
+  padding: 24px;
+}
+.cal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 65;
+  background: rgba(23,23,23,0.45);
+  backdrop-filter: blur(4px);
+}
+
+/* Tab pills inside calibration panel */
+.tab-pill {
+  flex: 1 1 0;
+  text-align: center;
+  padding: 8px 12px;
+  border-radius: var(--radius-pill-sm);
+  font-size: 13px;
+  color: var(--color-body);
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: background 120ms ease, color 120ms ease;
+}
+.tab-pill[aria-selected="true"] {
+  background: var(--color-ink);
+  color: var(--color-on-primary);
+}
+
+/* Drag handle for credit-card calibration */
+.cc-stage {
+  position: relative;
+  width: 100%;
+  height: 280px;
+  border-radius: var(--radius-md);
+  background:
+    repeating-linear-gradient(45deg, var(--color-canvas-soft-2) 0 8px, var(--color-canvas-soft) 8px 16px);
+  border: 1px dashed var(--color-hairline-strong);
+  overflow: hidden;
+  touch-action: none;
+}
+.cc-card {
+  position: absolute;
+  background: var(--color-link);
+  border-radius: 6px;
+  box-shadow:
+    0 0 0 1px rgba(0,0,0,0.05),
+    0 8px 20px -6px rgba(0,112,243,0.5);
+  cursor: grab;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+}
+.cc-card.is-dragging { cursor: grabbing; }
+.cc-handle {
+  position: absolute;
+  width: 18px; height: 18px;
+  background: var(--color-canvas);
+  border: 1px solid var(--color-hairline-strong);
+  border-radius: 9999px;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  cursor: nwse-resize;
+}
+.cc-handle.tl { top: -9px; left: -9px; }
+.cc-handle.br { bottom: -9px; right: -9px; }
+
+/* SVG tick styles on the ruler */
+.ruler-canvas { display: block; }

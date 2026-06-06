@@ -1,0 +1,80 @@
+---
+const year = new Date().getFullYear();
+const cols = [
+  {
+    label: "Product",
+    links: [
+      { href: "/#calibrate", label: "Calibration" },
+      { href: "/#how-it-works", label: "How it works" },
+      { href: "/#faq", label: "FAQ" },
+    ],
+  },
+  {
+    label: "Methods",
+    links: [
+      { href: "/#method-auto", label: "Auto-Detect Device" },
+      { href: "/#method-diagonal", label: "Screen Diagonal" },
+      { href: "/#method-card", label: "Credit Card" },
+    ],
+  },
+  {
+    label: "Resources",
+    links: [
+      { href: "/#shortcuts", label: "Keyboard shortcuts" },
+      { href: "/#tips", label: "Accuracy tips" },
+      { href: "/#changelog", label: "Changelog" },
+    ],
+  },
+  {
+    label: "Company",
+    links: [
+      { href: "/#about", label: "About" },
+      { href: "/#privacy", label: "Privacy" },
+      { href: "/#terms", label: "Terms" },
+    ],
+  },
+];
+---
+
+<footer class="band-soft" style="border-top: 1px solid var(--color-hairline);">
+  <div class="container-page" style="padding-block: 64px;">
+    <div class="grid grid-cols-2 md:grid-cols-5 gap-8">
+      <div class="col-span-2">
+        <div class="flex items-center gap-2 mb-3">
+          <span
+            class="inline-flex items-center justify-center"
+            style="width:24px;height:24px;border-radius:5px;background:var(--color-ink);color:var(--color-on-primary);"
+          >
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <rect x="1" y="4" width="14" height="8" rx="1" stroke="currentColor" stroke-width="1.2"/>
+              <path d="M3 8v3M5 8v2M7 8v3M9 8v2M11 8v3M13 8v2" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+            </svg>
+          </span>
+          <span class="body-sm" style="font-weight:600;">Better Online Ruler</span>
+        </div>
+        <p class="body-sm" style="color:var(--color-mute);max-width:36ch;">
+          Pixel-accurate on-screen measurement, in your browser. No accounts, no ads, no tracking.
+        </p>
+      </div>
+      {
+        cols.map((c) => (
+          <div>
+            <div class="caption-mono mb-3" style="color:var(--color-mute);">{c.label}</div>
+            <ul class="flex flex-col gap-2">
+              {c.links.map((l) => (
+                <li>
+                  <a class="body-sm" style="color:var(--color-body);" href={l.href}>{l.label}</a>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))
+      }
+    </div>
+
+    <div class="mt-12 flex flex-col md:flex-row items-start md:items-center justify-between gap-3" style="border-top:1px solid var(--color-hairline); padding-top: 24px;">
+      <p class="caption" style="color:var(--color-mute);">© {year} betteronlineruler.com — independent product, not affiliated with Vercel.</p>
+      <p class="caption" style="color:var(--color-mute);font-family:var(--font-mono);">v0.1.0 · built with Astro</p>
+    </div>
+  </div>
+</footer>
